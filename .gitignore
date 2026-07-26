@@ -1,0 +1,5 @@
+# Local user config (created from config.example.sh at install time)
+config.sh
+# Runtime state / logs
+*.log
+state/

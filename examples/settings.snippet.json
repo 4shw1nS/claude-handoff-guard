@@ -1,0 +1,19 @@
+{
+  "//": "Manual install reference (examples/settings.snippet.json). Merge into ~/.claude/settings.json and replace <HOME> with your home path. install.sh does this for you.",
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "<HOME>/.claude/handoff-guard/bin/handoff-monitor.sh" } ] }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "<HOME>/.claude/handoff-guard/bin/handoff-gen.sh" } ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "<HOME>/.claude/handoff-guard/bin/handoff-resume.sh" } ] }
+    ]
+  },
+  "//statusLine": "Only set this if you don't already have a status line — it's a single value, not a list.",
+  "statusLine": {
+    "type": "command",
+    "command": "<HOME>/.claude/handoff-guard/bin/handoff-status.sh"
+  }
+}
