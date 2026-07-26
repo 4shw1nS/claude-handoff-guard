@@ -70,7 +70,7 @@ claude-handoff-guard/
 Requirements: `jq`, `claude` (Claude Code CLI), and Node/`npx` if you want the usage-window signal.
 
 ```bash
-git clone https://github.com/<you>/claude-handoff-guard.git
+git clone https://github.com/4shw1nS/claude-handoff-guard.git
 cd claude-handoff-guard
 ./install.sh
 ```
