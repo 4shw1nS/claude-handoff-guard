@@ -17,13 +17,13 @@ you're actually working.
 ## How it works
 
 ```
-Status line ──────► handoff-status.sh  records the REAL context% / 5h% / 7d% (the sensor)
-                                       and shows "Handoff: true/false (max%)"
+Status line (every render) ──► handoff-status.sh
+                                    1. records the REAL context% / 5h% / 7d%
+                                    2. shows "Handoff: true/false (max%)"
+                                    3. max(...) ≥ 70%?  └─► handoff-gen.sh  (also when idle)
 
 Stop hook (after every turn) ──► handoff-monitor.sh
-                                    1. read the recorded real percentages
-                                    2. max(context%, 5-hour%, 7-day%) ≥ 70%?
-                                          └─► handoff-gen.sh  (background, debounced)
+                                    reads those percentages, same threshold, same generator
 
 PreCompact hook ──► handoff-gen.sh   guaranteed final snapshot before context is compacted
 SessionStart hook ─► handoff-resume.sh  injects HANDOFF.md into the next session
@@ -33,12 +33,22 @@ SessionStart hook ─► handoff-resume.sh  injects HANDOFF.md into the next ses
   Above it, it fires the generator in the background (so your turn never blocks) and
   **debounces** so it only regenerates after context grows `REGEN_DELTA_TOKENS`.
 
-> ### The status line is the sensor, not decoration
+> ### The status line does the real work
 >
 > Claude Code publishes the authoritative numbers — `context_window.used_percentage`,
-> `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` — **to the
-> status line only**. Hooks never receive them. So `handoff-status.sh` records them each
-> render and `handoff-monitor.sh` reads them back.
+> `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` — along
+> with `transcript_path` and `cwd`, **to the status line only**. Hooks never receive the
+> percentages. So `handoff-status.sh` is both:
+>
+> - **the sensor** — it records those numbers each render for `handoff-monitor.sh`, and
+> - **a trigger** — it can start a generation itself.
+>
+> The trigger matters because the Stop hook only fires *after an assistant turn*. A session
+> that crosses the threshold and then sits idle would never get a handoff written — exactly
+> the "about to hit the rate limit" case this tool exists for. The status line keeps
+> rendering while idle, so it closes that gap. The transcript read is gated by
+> `STATUS_CHECK_INTERVAL_SECS` and generation is spawned detached, so rendering never blocks.
+> Set `STATUSLINE_TRIGGER=false` to leave generation to the Stop hook alone.
 >
 > **If the ticker isn't wired up, the guard falls back to estimating** from `CONTEXT_LIMIT`
 > and `BLOCK_TOKEN_LIMIT`, and those estimates can be wrong in *both* directions — a real
@@ -56,9 +66,11 @@ SessionStart hook ─► handoff-resume.sh  injects HANDOFF.md into the next ses
   before it is written; a failed generation leaves the previous `HANDOFF.md` intact.
 - **`handoff-resume.sh`** — on session start, if a **valid** `HANDOFF.md` exists it's injected
   as context (falling back to `HANDOFF.md.bak`). An incomplete file is never injected.
+- **`handoff-status.sh`** — the status-line ticker, the signal recorder, and the idle-session
+  trigger. See the box below.
 - **`handoff-doctor.sh`** — self-test: checks deps, hooks, config, transcript discovery and
-  the token signals, and with `--generate` performs one real generation. Run it instead of
-  waiting to hit 70% to find out whether the guard actually works.
+  which signal source is live, and with `--generate` performs one real generation. Run it
+  instead of waiting to hit 70% to find out whether the guard actually works.
 - **`handoff-status.sh`** — the status-line ticker. Reads a tiny per-session state file the
   monitor refreshes each turn and prints **`Handoff: true`** (green, once the larger signal
   has crossed 70% and the handoff is being maintained) or **`Handoff: false`** (dimmed)
@@ -81,7 +93,7 @@ claude-handoff-guard/
 │   ├── handoff-monitor.sh  #   Stop hook — per-turn gate
 │   ├── handoff-gen.sh      #   generator (also the PreCompact hook)
 │   ├── handoff-resume.sh   #   SessionStart hook
-│   ├── handoff-status.sh   #   status-line ticker
+│   ├── handoff-status.sh   #   status-line ticker + signal recorder + idle trigger
 │   └── handoff-doctor.sh   #   self-test (`--generate` for a live end-to-end check)
 ├── lib/
 │   └── common.sh           # shared config + signal math
@@ -117,6 +129,8 @@ Edit `~/.claude/handoff-guard/config.sh`:
 | Setting | Default | Meaning |
 |---|---|---|
 | `THRESHOLD_PCT` | `70` | Start writing the handoff at this % of the largest signal |
+| `STATUSLINE_TRIGGER` | `true` | Let the status line start a generation (covers idle sessions) |
+| `STATUS_CHECK_INTERVAL_SECS` | `60` | Min seconds between transcript reads from the status line |
 | `SIGNALS_MAX_AGE_SECS` | `900` | Ignore recorded status-line signals older than this |
 | `CONTEXT_LIMIT` | `200000` | **Fallback only.** Context size in tokens, used when the real context% isn't available |
 | `ENABLE_USAGE_CHECK` | `true` | **Fallback only.** Estimate the usage window via `ccusage` when the real 5h% isn't available |
@@ -192,6 +206,12 @@ turn (rate-limited by `RETRY_COOLDOWN_SECS`).
 **Status line says `Handoff: FAILED`.**
 The last generation failed. The reason is in `guard.log` and in
 `state/gen_status_<session>`. Your previous `HANDOFF.md` was left untouched.
+
+**The ticker shows a percentage that doesn't match the rest of your status line.**
+Fixed. The ticker used to display the *monitor's* last verdict, which only refreshes on an
+assistant turn — so an idle session kept showing a number from tens of minutes earlier
+(e.g. `false (53%)` while the real 5-hour figure was 95%). It now reads the live signals
+from the payload it was just handed.
 
 **`Handoff: false` while `/usage` says you're near the 5-hour limit.**
 The guard is estimating instead of reading the real number. Check `src=` in `guard.log`:

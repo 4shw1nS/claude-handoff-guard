@@ -5,6 +5,13 @@
 # ---- Threshold ----
 THRESHOLD_PCT=70              # start generating the handoff at this % of the larger signal
 
+# ---- Status-line trigger ----
+# The Stop hook only fires after an assistant turn, so a session that crosses the threshold
+# and then sits idle would never get a handoff. The status line keeps rendering while idle,
+# so it can start the generation itself. Set false to leave that to the Stop hook alone.
+STATUSLINE_TRIGGER=true
+STATUS_CHECK_INTERVAL_SECS=60  # min seconds between transcript reads from the status line
+
 # ---- Signals ----
 # When handoff-status.sh is in your status line, the guard uses Claude Code's OWN
 # percentages (context%, 5-hour%, 7-day%) and everything below is unused. Check `src=` in
