@@ -63,47 +63,14 @@ case "$HANDOFF_FILE" in
   *)  handoff_path="$cwd/$HANDOFF_FILE" ;;
 esac
 
-# ---- Should we generate? -----------------------------------------------------
-statef="$STATE_DIR/last_gen_${session}.tok"
-last=0
-[ -f "$statef" ] && last=$(cat "$statef" 2>/dev/null || echo 0)
-case "$last" in ''|*[!0-9]*) last=0 ;; esac
+# ---- Should we generate? (shared with the status-line trigger) ---------------
+# A missing or invalid handoff is repaired immediately rather than waiting for the context
+# to grow another delta — that includes files a pre-fix version corrupted.
+why=$(needs_handoff "$handoff_path" "$session" "$ctx") || exit 0
+acquire_gen_slot "$session" || exit 0
 
-need=false; why=""
-if ! handoff_is_valid "$handoff_path"; then
-  # Missing, empty, or previously corrupted (e.g. an error string written by an older
-  # version). Repair it now instead of waiting for the context to grow another delta.
-  need=true; why="handoff missing/invalid"
-elif [ "$(( ctx - last ))" -ge "$REGEN_DELTA_TOKENS" ]; then
-  need=true; why="ctx grew $(( ctx - last )) tokens"
-fi
-[ "$need" = "true" ] || exit 0
-
-# ---- Rate limit + mutual exclusion ------------------------------------------
-now=$(date +%s)
-attemptf="$STATE_DIR/last_attempt_${session}"
-if [ -f "$attemptf" ]; then
-  prev=$(cat "$attemptf" 2>/dev/null || echo 0)
-  case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
-  [ "$(( now - prev ))" -lt "$RETRY_COOLDOWN_SECS" ] && exit 0
-fi
-
-# mkdir is atomic — it is the lock. Break it if a previous run died holding it.
-lock="$STATE_DIR/gen_${session}.lock"
-if ! mkdir "$lock" 2>/dev/null; then
-  lock_mtime=$(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || echo "$now")
-  if [ "$(( now - lock_mtime ))" -gt "$(( GEN_TIMEOUT_SECS + 60 ))" ]; then
-    log "breaking stale generation lock for ${session}"
-    rmdir "$lock" 2>/dev/null || true
-    mkdir "$lock" 2>/dev/null || exit 0
-  else
-    exit 0   # a generation is already in flight
-  fi
-fi
-
-printf '%s' "$now" > "$attemptf" 2>/dev/null || true
 MAX_PCT="$max_pct" CTX_PCT="$ctx_pct" USE_PCT="$h5_pct" CTX_TOKENS="$ctx" \
-GEN_SESSION="$session" GEN_LOCK="$lock" \
+GEN_SESSION="$session" GEN_LOCK="$GEN_LOCK" \
   "$DIR/handoff-gen.sh" "$transcript" "$cwd" >/dev/null 2>&1 &
 log "triggered handoff-gen (max=${max_pct}%, reason: ${why})"
 exit 0

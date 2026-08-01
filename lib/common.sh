@@ -172,3 +172,60 @@ handoff_is_valid() {
 set_gen_status() {  # set_gen_status <session> <ok|fail> <detail>
   printf '%s|%s' "$2" "${3:-}" > "$STATE_DIR/gen_status_$1" 2>/dev/null || true
 }
+
+# ---- Generation decision (shared by the Stop hook and the status line) --------
+# needs_handoff <handoff_path> <session> <ctx_tokens>
+# Echoes the reason and returns 0 when a (re)generation is warranted.
+needs_handoff() {
+  local hp="$1" session="$2" ctx="$3" statef last
+  if ! handoff_is_valid "$hp"; then echo "handoff missing/invalid"; return 0; fi
+  statef="$STATE_DIR/last_gen_${session}.tok"
+  last=0
+  [ -f "$statef" ] && last=$(cat "$statef" 2>/dev/null || echo 0)
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  if [ "$(( ctx - last ))" -ge "$REGEN_DELTA_TOKENS" ]; then
+    echo "ctx grew $(( ctx - last )) tokens"; return 0
+  fi
+  return 1
+}
+
+# Cheap gate so the expensive transcript read happens at most once per interval.
+# <session> <interval_secs> — returns 0 when due, and stamps the check.
+check_due() {
+  local f="$STATE_DIR/last_check_$1" now prev
+  now=$(date +%s)
+  if [ -f "$f" ]; then
+    prev=$(cat "$f" 2>/dev/null || echo 0)
+    case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
+    [ "$(( now - prev ))" -lt "$2" ] && return 1
+  fi
+  printf '%s' "$now" > "$f" 2>/dev/null || true
+  return 0
+}
+
+# acquire_gen_slot <session> — returns 0 if we may generate now, and exports GEN_LOCK.
+# Enforces the retry cooldown and takes the mkdir lock (breaking a stale one).
+acquire_gen_slot() {
+  local session="$1" now attemptf prev lock lock_mtime
+  now=$(date +%s)
+  attemptf="$STATE_DIR/last_attempt_${session}"
+  if [ -f "$attemptf" ]; then
+    prev=$(cat "$attemptf" 2>/dev/null || echo 0)
+    case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
+    [ "$(( now - prev ))" -lt "$RETRY_COOLDOWN_SECS" ] && return 1
+  fi
+  lock="$STATE_DIR/gen_${session}.lock"
+  if ! mkdir "$lock" 2>/dev/null; then
+    lock_mtime=$(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || echo "$now")
+    if [ "$(( now - lock_mtime ))" -gt "$(( GEN_TIMEOUT_SECS + 60 ))" ]; then
+      log "breaking stale generation lock for ${session}"
+      rmdir "$lock" 2>/dev/null || true
+      mkdir "$lock" 2>/dev/null || return 1
+    else
+      return 1   # a generation is already in flight
+    fi
+  fi
+  printf '%s' "$now" > "$attemptf" 2>/dev/null || true
+  GEN_LOCK="$lock"
+  return 0
+}
