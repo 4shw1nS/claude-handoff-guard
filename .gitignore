@@ -3,3 +3,6 @@ config.sh
 # Runtime state / logs
 *.log
 state/
+# Handoffs this tool writes into whatever project it runs in — including this repo
+HANDOFF.md
+HANDOFF.md.bak

@@ -12,6 +12,18 @@ command -v claude >/dev/null 2>&1 || echo "warning: 'claude' not on PATH — gen
 mkdir -p "$DEST"
 cp -R "$SRC/bin" "$SRC/lib" "$DEST/"
 chmod +x "$DEST/bin/"*.sh
+
+# State moved out of $TMPDIR (macOS reaps /var/folders, which silently wiped the debounce
+# markers and the log). Carry over anything still there from an older install.
+OLD_STATE="${TMPDIR:-/tmp}/claude-handoff-guard"
+NEW_STATE="$DEST/state"
+mkdir -p "$NEW_STATE"
+# One-shot: guard on guard.log so re-running the installer never copies the stale
+# $TMPDIR log back over the live one.
+if [ -d "$OLD_STATE" ] && [ "$OLD_STATE" != "$NEW_STATE" ] && [ ! -e "$NEW_STATE/guard.log" ]; then
+  cp -R "$OLD_STATE/." "$NEW_STATE/" 2>/dev/null || true
+  echo "migrated state from $OLD_STATE to $NEW_STATE"
+fi
 if [ -f "$DEST/config.sh" ]; then
   echo "kept existing $DEST/config.sh"
 else
@@ -55,7 +67,7 @@ echo "  scripts    : $DEST"
 echo "  hooks      : registered in $SETTINGS (Stop, PreCompact, SessionStart)"
 echo "  statusline : $SL_MSG"
 echo "  config     : $DEST/config.sh"
-echo "  log        : \${TMPDIR:-/tmp}/claude-handoff-guard/guard.log"
+echo "  state/log  : $NEW_STATE/guard.log"
 if [ -n "${EXISTING_SL_NOTE:-}" ]; then
   echo
   echo "Your existing status line was kept:"
@@ -64,5 +76,9 @@ if [ -n "${EXISTING_SL_NOTE:-}" ]; then
   echo "output (pass the same stdin JSON through):"
   echo "    input=\$(cat); printf '%s' \"\$input\" | $STATUS"
 fi
+echo
+echo "Verify it works without waiting to hit ${THRESHOLD_PCT:-70}%:"
+echo "    cd <a project you've used> && $DEST/bin/handoff-doctor.sh"
+echo "    $DEST/bin/handoff-doctor.sh --generate   # also does one real generation"
 echo
 echo "Restart Claude Code (or /hooks reload) to pick up the new hooks."
