@@ -35,6 +35,13 @@ trap cleanup EXIT
 
 fail() { log "gen: FAILED — $1"; set_gen_status "$session" fail "$1"; exit 0; }
 
+# Spend gate. Applies to every automatic caller (Stop hook, status line, PreCompact);
+# handoff-now.sh sets MANUAL_GEN=1 to bypass it.
+if [ "${MANUAL_GEN:-0}" != "1" ] && [ "$AUTO_GENERATE" != "true" ]; then
+  log "gen: AUTO_GENERATE=false — skipping (run handoff-now.sh to generate on demand)"
+  exit 0
+fi
+
 [ -n "$transcript" ] && [ -f "$transcript" ] || fail "no transcript at '${transcript:-<empty>}'"
 command -v claude >/dev/null 2>&1 || fail "'claude' not on PATH"
 command -v jq >/dev/null 2>&1     || fail "'jq' not on PATH"

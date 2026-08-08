@@ -57,6 +57,10 @@ inplay=false
 printf '%s|%s' "$inplay" "$max_pct" > "$STATE_DIR/status_${session}" 2>/dev/null || true
 
 [ "$inplay" = "true" ] || exit 0
+if ! auto_gen_allowed "$max_pct"; then
+  [ "$AUTO_GENERATE" = "true" ] && log "above GEN_CEILING_PCT=${GEN_CEILING_PCT}% (max=${max_pct}%) — not generating"
+  exit 0
+fi
 
 case "$HANDOFF_FILE" in
   /*) handoff_path="$HANDOFF_FILE" ;;
