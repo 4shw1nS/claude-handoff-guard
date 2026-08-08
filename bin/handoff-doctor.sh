@@ -36,6 +36,13 @@ info "THRESHOLD_PCT    = $THRESHOLD_PCT"
 info "CONTEXT_LIMIT    = $CONTEXT_LIMIT"
 info "GEN_MODEL        = $GEN_MODEL"
 info "HANDOFF_FILE     = $HANDOFF_FILE"
+info "GEN_CEILING_PCT  = $GEN_CEILING_PCT"
+if [ "$AUTO_GENERATE" = "true" ]; then
+  ok "AUTO_GENERATE=true — the guard generates on its own"
+else
+  warn "AUTO_GENERATE=false — the guard will NEVER generate on its own"
+  info "the ticker still tracks usage; run handoff-now.sh in a project to create one"
+fi
 if mkdir -p "$STATE_DIR" 2>/dev/null && [ -w "$STATE_DIR" ]; then ok "state dir writable"
 else bad "state dir not writable: $STATE_DIR"; fi
 case "$STATE_DIR" in

@@ -5,6 +5,18 @@
 # ---- Threshold ----
 THRESHOLD_PCT=70              # start generating the handoff at this % of the larger signal
 
+# ---- Spend controls ----
+# Every handoff is a real API call billed to the same subscription you are working in, so
+# the guard spends tokens exactly when you have fewest left.
+#
+#   AUTO_GENERATE=false  -> never generates on its own. The ticker still tracks your usage;
+#                           run `handoff-now.sh` in a project when you actually want one.
+#   GEN_CEILING_PCT      -> stop auto-generating above this %. Past 100% you are in overage
+#                           and paying with credits, and a handoff written on the way up
+#                           already exists. Set 0 to remove the ceiling.
+AUTO_GENERATE=true
+GEN_CEILING_PCT=100
+
 # ---- Status-line trigger ----
 # The Stop hook only fires after an assistant turn, so a session that crosses the threshold
 # and then sits idle would never get a handoff. The status line keeps rendering while idle,

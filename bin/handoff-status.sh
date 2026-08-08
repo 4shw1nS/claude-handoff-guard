@@ -64,6 +64,7 @@ fi
 # ---- 3. Trigger generation if the Stop hook can't ----------------------------
 [ "$STATUSLINE_TRIGGER" = "true" ] || exit 0
 [ "$inplay" = "true" ] || exit 0
+auto_gen_allowed "$pct" || exit 0
 check_due "$session" "$STATUS_CHECK_INTERVAL_SECS" || exit 0
 
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)

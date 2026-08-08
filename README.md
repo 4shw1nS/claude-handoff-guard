@@ -129,6 +129,8 @@ Edit `~/.claude/handoff-guard/config.sh`:
 | Setting | Default | Meaning |
 |---|---|---|
 | `THRESHOLD_PCT` | `70` | Start writing the handoff at this % of the largest signal |
+| `AUTO_GENERATE` | `true` | `false` = never generate automatically; use `handoff-now.sh` |
+| `GEN_CEILING_PCT` | `100` | Stop auto-generating above this % (`0` = no ceiling) |
 | `STATUSLINE_TRIGGER` | `true` | Let the status line start a generation (covers idle sessions) |
 | `STATUS_CHECK_INTERVAL_SECS` | `60` | Min seconds between transcript reads from the status line |
 | `SIGNALS_MAX_AGE_SECS` | `900` | Ignore recorded status-line signals older than this |
@@ -172,6 +174,39 @@ window (`1000000` on 1M-context models — the default `200000` will read ~5× t
 pick `BLOCK_TOKEN_LIMIT` by comparing `/usage` against `guard.log` until the logged `5h%`
 tracks it. Subscription limits are quota based, not a published token number, so this is
 always an approximation. Alternatively set `ENABLE_USAGE_CHECK=false` and rely on context alone.
+
+---
+
+## Controlling what it spends
+
+Each handoff is one `claude -p` call billed to **the same subscription you're working in** —
+so the guard draws tokens precisely when you have fewest left, and past 100% of a limit it
+starts drawing paid credits. Three levers, cheapest first:
+
+| Want | Do |
+|---|---|
+| Cut the cost ~30× | `GEN_MODEL=claude-haiku-4-5` — summarization is well within Haiku |
+| Never touch credits | `GEN_CEILING_PCT=100` (default) — stops auto-generation once you're in overage |
+| Never spend automatically | `AUTO_GENERATE=false` — then run `handoff-now.sh` when you want one |
+| Fewer refreshes | Raise `REGEN_DELTA_TOKENS` (default 15000) |
+
+### On-demand mode
+
+```bash
+AUTO_GENERATE=false        # in ~/.claude/handoff-guard/config.sh
+```
+
+The ticker keeps tracking your usage and the SessionStart injection keeps working — only
+automatic generation stops. When you want a handoff:
+
+```bash
+cd <your project>
+~/.claude/handoff-guard/bin/handoff-now.sh
+```
+
+It uses the newest transcript for that directory and bypasses every gate — threshold,
+ceiling, debounce and cooldown. `handoff-doctor.sh` warns whenever `AUTO_GENERATE=false`,
+so you can't leave it off by accident and wonder why nothing appears.
 
 ---
 

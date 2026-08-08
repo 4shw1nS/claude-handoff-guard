@@ -10,7 +10,9 @@ GUARD_HOME="${CLAUDE_HANDOFF_HOME:-$HOME/.claude/handoff-guard}"
 # `HANDOFF_FILE=/tmp/x.md handoff-gen.sh` silently wrote to the configured path instead.
 _HG_VARS="THRESHOLD_PCT CONTEXT_LIMIT ENABLE_USAGE_CHECK BLOCK_TOKEN_LIMIT USAGE_CACHE_TTL
           GEN_MODEL REGEN_DELTA_TOKENS HANDOFF_FILE GEN_TIMEOUT_SECS MIN_HANDOFF_BYTES
-          GEN_MAX_TURNS KEEP_BACKUP RETRY_COOLDOWN_SECS STATE_DIR"
+          GEN_MAX_TURNS KEEP_BACKUP RETRY_COOLDOWN_SECS STATE_DIR
+          AUTO_GENERATE GEN_CEILING_PCT STATUSLINE_TRIGGER STATUS_CHECK_INTERVAL_SECS
+          SIGNALS_MAX_AGE_SECS"
 for _v in $_HG_VARS; do
   [ -n "${!_v+x}" ] && eval "_HG_ENV_${_v}=\${${_v}}"
 done
@@ -36,6 +38,13 @@ unset _HG_VARS _v _e
 : "${GEN_MAX_TURNS:=3}"           # headroom; the generator runs with tools disabled anyway
 : "${KEEP_BACKUP:=true}"          # keep the previous good handoff as HANDOFF.md.bak
 : "${RETRY_COOLDOWN_SECS:=120}"   # min seconds between generation attempts for a session
+
+# ---- Spend controls ----
+# Every generation is a real API call against the same subscription you are working in.
+: "${AUTO_GENERATE:=true}"        # false = never generate on its own; use handoff-now.sh
+: "${GEN_CEILING_PCT:=100}"       # don't auto-generate above this % (0 disables the ceiling).
+                                  # Past 100% you are in overage and paying with credits, and
+                                  # a handoff written on the way up already exists.
 
 # State lives under the guard home, NOT $TMPDIR: macOS reaps /var/folders periodically,
 # which silently wiped the debounce markers and the log between sessions.
@@ -171,6 +180,15 @@ handoff_is_valid() {
 # Record the outcome of the last generation so the status line can surface it.
 set_gen_status() {  # set_gen_status <session> <ok|fail> <detail>
   printf '%s|%s' "$2" "${3:-}" > "$STATE_DIR/gen_status_$1" 2>/dev/null || true
+}
+
+# Automatic generation allowed at this level? Checked by both triggers before they do any
+# work. Manual runs (handoff-now.sh) bypass this entirely.
+auto_gen_allowed() {  # auto_gen_allowed <max_pct>
+  [ "$AUTO_GENERATE" = "true" ] || return 1
+  case "$GEN_CEILING_PCT" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$GEN_CEILING_PCT" -le 0 ] && return 0
+  [ "${1:-0}" -le "$GEN_CEILING_PCT" ]
 }
 
 # ---- Generation decision (shared by the Stop hook and the status line) --------
